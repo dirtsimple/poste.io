@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+# === Patches for poste.io free version to be a properly isolated service ===
+#
+# - Restricts all public listening ports to the IP(s) associated with the
+#   container's hostname
+#
+# - Replaces all localhost listening ports with unix-domain sockets inside
+#   the container
+#
+# With these changes, multiple poste.io instances can be run on the same
+# machine (as long as each container has its own public IP), and no internal
+# services (such as lmtp, quota, websockets, etc.) are exposed to the host's
+# loopback interface.
+
+set -eu  # fail on any errors or undefined variables
+
+# A tiny DSL for editing files with sed: `~ edit files...; {{ commands }}`
+edit() { local sed; ::block sed-dsl; sed -i -e "$sed" "$@"; }
+sed-dsl()    { sed."$@"; }
+sed.sub()    { sed+="s~$1~$2~${3-}"$'\n'; }
+sed.del()    { sed+="/$1/d"$'\n'; }
+sed.append() { sed+='$a'; ((!$#))||__sedline "$@"; ::block __sedline; sed+=$'\n'; }
+sed.after()  { sed+='/'"$1"'/a'; (($#<2))||__sedline "${@:2}"; ::block __sedline; sed+=$'\n'; }
+__sedline()  { sed+="${*/#/\\$'\n'}"; }
+
+# DSL syntax macros: minified runtime copied from https://github.com/bashup/scale-dsl
+shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +='{ ::__;::(){ ((!$#))||{ shift;"${__dsl__[@]-::no-dsl}" ' ~='{ ::__;::(){ ((!$#))||{ shift; ' -='"${__dsl__[@]-::no-dsl}" ' '{{=return;return;};__blk__=;set -- "${__blarg__[@]:1}"; ' '}}=};__:: 0 "$@";}';::block(){ ((!$#))||local __dsl__=("$@");${__blk__:+::};};__bsp__=0;::__(){ __bstk__[__bsp__++]="${__blk__:+__blk__=1;$(declare -f ::)}";};__::(){ local __blarg__=("$@");__blk__=1;:: "$@"||set -- $?;__blk__=;local REPLY;${__bstk__[--__bsp__]:+eval "${__bstk__[__bsp__]}"}||:;return $1;}
+
+
+# === Restrict public ports to the container hostname IP ===
+
+~ edit /opt/www/webmail/config/config.inc.php; {{
+  # Make webmail connect to the public hostname, instead of localhost
+  + append ""; {{
+    - "\$config['default_host'] = 'ssl://' . gethostname();"
+    - "\$config['smtp_server']  = 'tls://' . gethostname() . ':587';"
+  }}
+}}
+
+~ edit /etc/nginx/sites-enabled.templates/{no-,}https; {{
+  # Remove the listen lines that lack an address
+  - del 'listen __HTTP_PORT__;'
+  - del 'listen __HTTPS_PORT__ ssl;'
+
+  # Replace the IPv6 wildcard and any localhost references w/explicit host
+  - sub 'listen \[::\]:' 'listen __HOST__:'
+  - sub localhost '$hostname'
+}}
+
+~ edit /etc/cont-init.d/23-nginx.sh; {{
+  # This file is run at container start, so we hijack it to inject the runtime
+  # hostname into the nginx and haraka configs (where variables aren't allowed)
+  + append ""; {{
+  	- 'bindhost=\$(hostname)'
+    for i in submission smtp; do
+      - "hostname -i >/opt/haraka-$i/config/my-ip"
+    done
+    - "sed -i 's/__HOST__/'\"\$bindhost\"/                                        /etc/nginx/sites-enabled/administration"
+    - "sed -i 's/^listen=.*:25\$/listen='\"\$bindhost/\"                           /opt/haraka-smtp/config/smtp.ini"
+    - "sed -i 's/^listen=.*:587,.*:465\$/listen='\"\$bindhost:587,\$bindhost:465/\" /opt/haraka-submission/config/smtp.ini"
+  }}
+}}
+
+~ edit /opt/haraka-smtp/plugins/poste.js; {{
+  # Force outbound smtp to go via container hostname, unless overridden by
+  # another plugin.  (We only edit the haraka-smtp version because the
+  # haraka-submissions/plugins dir is a symlink.)
+  + after "plugin\.register_hook('init_child'"; {{
+    - "    plugin.register_hook('get_mx', 'get_mx');"
+  }}
+  + append ""; {{
+    - 'const my_outbound_ip = require("haraka-config").get("my-ip");'
+    - 'exports.get_mx = function (next, hmail, domain) { hmail.todo.notes.outbound_ip=my_outbound_ip; next(); }'
+  }}
+}}
+
+
+# === Replace localhost ports with unix sockets ====
+
+# Note: if you change any of these socket names or locations, they must also be
+# changed in the corresponding files, as applicable:
+#
+# - files/etc/dovecot/local.conf
+# - files/etc/rspamd/override.d/worker-*.inc
+# - files/opt/haraka-smtp/config/redis.ini
+
+sockdir=/var/run
+rspam_web=$sockdir/rspamd-web.sock
+rspam=$sockdir/rspamd-normal.sock
+lmtp=$sockdir/lmtp.sock
+quota=$sockdir/dovecot-quota.sock
+
+# redis and haraka run unprivileged and so need directories of their own
+mkdir -p       "$sockdir"/redis "$sockdir"/haraka
+chown redis    "$sockdir"/redis
+chown delivery "$sockdir"/haraka
+
+redis="$sockdir"/redis/redis.sock
+haraka_web=$sockdir/haraka/web.sock
+
+
+# Change nginx proxy settings to use unix sockets
+
+~ edit /etc/nginx/sites-enabled.templates/{no-,}https; {{
+  - sub 127.0.0.1:11334 unix:"$rspam_web":
+  - sub 127.0.0.1:11380 unix:"$haraka_web":
+}}
+
+# The rspamc command needs to reference the web socket explicitly
+
+~ edit /opt/admin/src/AppBundle/Server/System.php; {{
+  - sub "rspamc stat" \
+        "rspamc -h $rspam_web stat"
+}}
+~ edit /etc/dovecot/sieve/report-{spam,ham}.sieve; {{
+  - sub '"rspamc" \[' \
+        '"rspamc" ["-h" "'"$rspam_web"'" '
+}}
+
+# Haraka plugins need to use sockets for LMTP and quota instead of ports
+
+~ edit /opt/haraka-smtp/plugins/rcpt_database.js; {{
+  - sub ", port: 24};" \
+        ", port: 24, path: '$lmtp'}"
+}}
+~ edit /opt/haraka-smtp/plugins/dovecot_quota.js; {{
+  - sub "socket\\.connect(13001, '127.0.0.1');" \
+        "socket.connect('$quota');"
+}}
+
+# Haraka web server needs to listen on a unix socket
+
+~ edit /usr/lib/node_modules/Haraka/server.js; {{
+  - sub 'Server\.http\.server\.listen(.*, 0);' \
+        "Server.http.server.listen('$haraka_web', 0);"
+}}
+
+# Have haraka talk to rspamd via unix socket
+
+~ edit /usr/lib/node_modules/Haraka/node_modules/haraka-plugin-rspamd/index.js; {{
+  - del 'port: plugin'
+  - sub 'host: plugin.*,' \
+        "socketPath: '$rspam',"
+}}
+
+# Redis plugin doesn't support unix paths by default; fix it
+
+~ edit /usr/lib/node_modules/Haraka/node_modules/haraka-plugin-redis/index.js; {{
+  - sub ", 'db'\\]\\.forEach" \
+        ", 'db', 'path'].forEach"
+  - sub '+ opts\.port;$' \
+        '+ opts.port + (opts.path || "");'
+  - sub 'opts.port = plugin.redisCfg.server.port;' \
+        'opts.path = plugin.redisCfg.server.path;'
+}}
+
+# Configure redis to listen on a unix socket, and rspamd/admin to connect there
+
+~ edit /etc/redis/redis.conf; {{
+  - sub "^port 6379" "port 0"  # disable the localhost port
+  - append "" "unixsocket $redis" "unixsocketperm 777"
+}}
+
+~ edit /etc/rspamd/local.d/{redis,statistic}.conf; {{
+  - sub 'servers = "127.*;$' \
+        'servers = "'"$redis"'";'
+}}
+~ edit /opt/admin/vendor/predis/predis/src/Client.php; {{
+  # Make the Predis\Client constructor default to the redis unix socket
+  - sub '__construct($parameters = null,' \
+        '__construct($parameters = "unix:'"$redis"'",'
+}}
