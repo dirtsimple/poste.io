@@ -52,7 +52,7 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
   # This file is run at container start, so we hijack it to inject the runtime
   # hostname into the nginx and haraka configs (where variables aren't allowed)
   + append ""; {{
-  	- 'bindhost=\$(hostname)'
+    - 'bindhost=\$(hostname)'
     for i in submission smtp; do
       - "hostname -i >/opt/haraka-$i/config/my-ip"
     done
@@ -63,7 +63,7 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
 }}
 
 ~ edit /opt/haraka-smtp/plugins/poste.js; {{
-  # Force outbound smtp to go via container hostname, unless overridden by
+  # Force outbound smtp to go via container host IP, unless overridden by
   # another plugin.  (We only edit the haraka-smtp version because the
   # haraka-submissions/plugins dir is a symlink.)
   + after "plugin\.register_hook('init_child'"; {{
@@ -155,7 +155,7 @@ haraka_web=$sockdir/haraka/web.sock
         'opts.path = plugin.redisCfg.server.path;'
 }}
 
-# Configure redis to listen on a unix socket, and rspamd/admin to connect there
+# Configure redis to listen on a unix socket, and rspamd+admin to connect there
 
 ~ edit /etc/redis/redis.conf; {{
   - sub "^port 6379" "port 0"  # disable the localhost port
@@ -166,6 +166,7 @@ haraka_web=$sockdir/haraka/web.sock
   - sub 'servers = "127.*;$' \
         'servers = "'"$redis"'";'
 }}
+
 ~ edit /opt/admin/vendor/predis/predis/src/Client.php; {{
   # Make the Predis\Client constructor default to the redis unix socket
   - sub '__construct($parameters = null,' \
