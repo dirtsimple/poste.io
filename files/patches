@@ -19,9 +19,10 @@ set -eu  # fail on any errors or undefined variables
 edit() { local sed; ::block sed-dsl; sed -i -e "$sed" "$@"; }
 sed-dsl()    { sed."$@"; }
 sed.sub()    { sed+="s~$1~$2~${3-}"$'\n'; }
-sed.del()    { sed+="/$1/d"$'\n'; }
+sed.del()    { sed+="${1+/$1/}d"$'\n'; }
 sed.append() { sed+='$a'; ((!$#))||__sedline "$@"; ::block __sedline; sed+=$'\n'; }
 sed.after()  { sed+='/'"$1"'/a'; (($#<2))||__sedline "${@:2}"; ::block __sedline; sed+=$'\n'; }
+sed.range()  { sed+="/$1/,/$2/ {"$'\n'; ::block sed-dsl; sed+=$'}\n'; }
 __sedline()  { sed+="${*/#/\\$'\n'}"; }
 
 # DSL syntax macros: minified runtime copied from https://github.com/bashup/scale-dsl
@@ -116,6 +117,14 @@ haraka_web=$sockdir/haraka/web.sock
 ~ edit /etc/dovecot/sieve/report-{spam,ham}.sieve; {{
   - sub '"rspamc" \[' \
         '"rspamc" ["-h" "'"$rspam_web"'" '
+}}
+
+# Disable dovecot quota service on localhost
+
+~ edit /etc/dovecot/conf.d/90-quota.conf; {{
+  + range 'inet_listener' '}'; {{
+    - del
+  }}
 }}
 
 # Haraka plugins need to use sockets for LMTP and quota instead of ports
