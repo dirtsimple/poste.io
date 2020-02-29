@@ -129,7 +129,7 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
     - sub 'const hp = .*' \
           'const hp = [null, null, host_port];'
     - sub 'Server.http.server.listen.*$' \
-          '!fs.existsSync(host_port)||fs.removeSync(host_port); Server.http.server.listen(host_port, function(){fs.chmodSync(host_port, 0o777);});'
+          '!fs.existsSync(host_port)||fs.unlinkSync(host_port); Server.http.server.listen(host_port, function(){fs.chmodSync(host_port, 0o777);});'
   }}
 }}
 
