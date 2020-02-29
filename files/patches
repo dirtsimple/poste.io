@@ -49,20 +49,6 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
   - sub localhost '$hostname'
 }}
 
-~ edit /etc/cont-init.d/23-nginx.sh; {{
-  # This file is run at container start, so we hijack it to inject the runtime
-  # hostname into the nginx and haraka configs (where variables aren't allowed)
-  + append ""; {{
-    - 'bindhost=\$(hostname)'
-    for i in submission smtp; do
-      - "hostname -i >/opt/haraka-$i/config/my-ip"
-    done
-    - "sed -i 's/__HOST__/'\"\$bindhost\"/                                        /etc/nginx/sites-enabled/administration"
-    - "sed -i 's/^listen=.*:25\$/listen='\"\$bindhost/\"                           /opt/haraka-smtp/config/smtp.ini"
-    - "sed -i 's/^listen=.*:587,.*:465\$/listen='\"\$bindhost:587,\$bindhost:465/\" /opt/haraka-submission/config/smtp.ini"
-  }}
-}}
-
 ~ edit /opt/haraka-smtp/plugins/poste.js; {{
   # Force outbound smtp to go via container host IP, unless overridden by
   # another plugin.  (We only edit the haraka-smtp version because the
