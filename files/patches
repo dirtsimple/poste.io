@@ -98,14 +98,14 @@ chown redis    "$sockdir"/redis
 chown delivery "$sockdir"/haraka
 
 redis="$sockdir"/redis/redis.sock
-haraka_web=$sockdir/haraka/web.sock
-
+haraka_smtp_web=$sockdir/haraka/web-11380.sock
+haraka_sub_web=$sockdir/haraka/web-11381.sock
 
 # Change nginx proxy settings to use unix sockets
 
 ~ edit /etc/nginx/sites-enabled.templates/{no-,}https; {{
   - sub 127.0.0.1:11334 unix:"$rspam_web":
-  - sub 127.0.0.1:11380 unix:"$haraka_web":
+  - sub 'proxy_pass http://127.0.0.1:\$1/' "proxy_pass http://unix:$sockdir/haraka/web-\$1.sock:/"
 }}
 
 # The rspamc command needs to reference the web socket explicitly
@@ -138,12 +138,27 @@ haraka_web=$sockdir/haraka/web.sock
         "socket.connect('$quota');"
 }}
 
-# Haraka web server needs to listen on a unix socket
+# Haraka web servers need to listen on unix sockets
 
 ~ edit /usr/lib/node_modules/Haraka/server.js; {{
-  - sub 'Server\.http\.server\.listen(.*, 0);' \
-        "Server.http.server.listen('$haraka_web', 0);"
+  - sub 'Server.get_listen_addrs(Server.http.cfg, 80)' \
+        '[Server.http.cfg.listen]'
+  + range '^Server.setup_http_listeners' '^}$'; {{
+    - sub 'const hp = .*' \
+          'const hp = [null, null, host_port];'
+    - sub 'Server.http.server.listen.*$' \
+          '!fs.existsSync(host_port)||fs.removeSync(host_port); Server.http.server.listen(host_port, function(){fs.chmodSync(host_port, 0o777);});'
+  }}
 }}
+
+~ edit /opt/haraka-smtp/config/http.ini; {{
+  - sub 'listen=127.0.0.1:11380' "listen=$haraka_smtp_web"
+}}
+
+~ edit /opt/haraka-submission/config/http.ini; {{
+  - sub 'listen=127.0.0.1:11381' "listen=$haraka_sub_web"
+}}
+
 
 # Have haraka talk to rspamd via unix socket
 
