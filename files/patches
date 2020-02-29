@@ -89,7 +89,6 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
 sockdir=/var/run
 rspam_web=$sockdir/rspamd-web.sock
 rspam=$sockdir/rspamd-normal.sock
-lmtp=$sockdir/lmtp.sock
 quota=$sockdir/dovecot-quota.sock
 
 # redis and haraka run unprivileged and so need directories of their own
@@ -100,6 +99,7 @@ chown delivery "$sockdir"/haraka
 redis="$sockdir"/redis/redis.sock
 haraka_smtp_web=$sockdir/haraka/web-11380.sock
 haraka_sub_web=$sockdir/haraka/web-11381.sock
+
 
 # Change nginx proxy settings to use unix sockets
 
@@ -127,12 +127,8 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
   }}
 }}
 
-# Haraka plugins need to use sockets for LMTP and quota instead of ports
+# Haraka plugins need to use sockets for quota instead of ports
 
-~ edit /opt/haraka-smtp/plugins/rcpt_database.js; {{
-  - sub ", port: 24};" \
-        ", port: 24, path: '$lmtp'}"
-}}
 ~ edit /opt/haraka-smtp/plugins/dovecot_quota.js; {{
   - sub "socket\\.connect(13001, '127.0.0.1');" \
         "socket.connect('$quota');"
