@@ -10,7 +10,7 @@
 #
 # With these changes, multiple poste.io instances can be run on the same
 # machine (as long as each container has its own public IP), and no internal
-# services (such as lmtp, quota, websockets, etc.) are exposed to the host's
+# services (such as quota, websockets, etc.) are exposed to the host's
 # loopback interface.
 
 set -eu  # fail on any errors or undefined variables
@@ -173,8 +173,10 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
         'servers = "'"$redis"'";'
 }}
 
-~ edit /opt/admin/vendor/predis/predis/src/Client.php; {{
-  # Make the Predis\Client constructor default to the redis unix socket
-  - sub '__construct($parameters = null,' \
-        '__construct($parameters = "unix:'"$redis"'",'
+~ edit /opt/admin/src/AppBundle/Resources/config/services.yml; {{
+  - sub '^  Predis\\Client: .*$' \
+         '  Predis\\Client: { arguments: [ "unix:'"$redis"'" ] }'
+
+  # The above change won't take effect unless the service cache is cleared:
+  rm -rf /opt/admin/var/cache/prod
 }}
