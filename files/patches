@@ -150,17 +150,6 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
         "socketPath: '$rspam',"
 }}
 
-# Redis plugin doesn't support unix paths by default; fix it
-
-~ edit /usr/lib/node_modules/Haraka/node_modules/haraka-plugin-redis/index.js; {{
-  - sub ", 'db'\\]\\.forEach" \
-        ", 'db', 'path'].forEach"
-  - sub '+ opts\.port;$' \
-        '+ opts.port + (opts.path || "");'
-  - sub 'opts.port = plugin.redisCfg.server.port;' \
-        'opts.path = plugin.redisCfg.server.path;'
-}}
-
 # Configure redis to listen on a unix socket, and rspamd+admin to connect there
 
 ~ edit /etc/redis/redis.conf; {{
