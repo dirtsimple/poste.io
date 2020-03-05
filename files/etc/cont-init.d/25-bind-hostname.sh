@@ -1,15 +1,28 @@
 #!/usr/bin/with-contenv bash
 
-# === Configure Haraka and nginx to use only the container's hostname ==
+# === Configure dovecot and nginx to bind or connect via the container's hostname ===
 
 bindhost=$(hostname)
-
 sed -i 's/__HOST__/'"$bindhost"/                                        /etc/nginx/sites-enabled/administration
-sed -i 's/^listen=.*:25$/listen='"$bindhost/"                           /opt/haraka-smtp/config/smtp.ini
-sed -i 's/^listen=.*:587,.*:465$/listen='"$bindhost:587,$bindhost:465/" /opt/haraka-submission/config/smtp.ini
 sed -i 's/submission_host = .*:587$/submission_host = '"$bindhost:587/" /etc/dovecot/conf.d/15-lda.conf
 
-# Haraka should only do outbound connects on our IP
-hostname -i >/opt/haraka-submission/config/my-ip
-hostname -i >/opt/haraka-smtp/config/my-ip
+
+# === Haraka needs each IP address to be listed explicitly ===
+
+ipaddrs=$(hostname -i)
+listen025=${ipaddrs// /:25,}:25
+listen465=${ipaddrs// /:465,}:465
+listen587=${ipaddrs// /:587,}:587
+
+sed -i 's/^listen=.*:25$/listen='"$listen025/"                    /opt/haraka-smtp/config/smtp.ini
+sed -i 's/^listen=.*:587,.*:465$/listen='"$listen587,$listen465/" /opt/haraka-submission/config/smtp.ini
+
+
+# === Haraka should only do outbound connects on one IP ===
+
+# If OUTBOUND_MAIL_IP is set, use that, otherwise use the host's first IP
+outbound=${OUTBOUND_MAIL_IP:-${ipaddrs%% *}}
+
+echo "$outbound" >/opt/haraka-submission/config/my-ip
+echo "$outbound" >/opt/haraka-smtp/config/my-ip
 

@@ -6,10 +6,15 @@ Specifically, in host mode networking, poste.io binds its outward-facing service
 
 As a result, poste.io not only doesn't play well with other mail servers, it doesn't play well with being used on a server that *does anything else*.  (It almost might as well not be a docker container at all!)
 
-So this image fixes these issues, by tweaking service configurations to only bind services on the IP that corresponds to the container's hostname, and replace localhost TCP sockets with unix domain sockets, kept privately within the container.  (Thereby preventing conflicts or confusion with other bindings of those ports on the localhost interface.)
+So this image fixes these issues, by tweaking service configurations to only bind services on the IPs that correspond to the container's hostname, and replace localhost TCP sockets with unix domain sockets, kept privately within the container.  (Thereby preventing conflicts or confusion with other bindings of those ports on the localhost interface.)
 
 Unfortunately, poste's admin tool isn't written with unix sockets in mind, and neither are significant parts of haraka and its plugins.  Thus, in addition to adding the configuration files found under [files/](files/), this image also has to [patch a lot of files](files/patches).  (Most of the patching is done at image build time, but a few are tweaked at container start by an [init script](files/etc/cont-init.d/25-bind-hostname.sh), because nginx and haraka don't allow variable substitution in the part of their config files that set listening ports.)
 
-(Note: this image relies even more on a correct docker hostname than poste.io does.  Make sure that the hostname you assign to the container is public, fully-qualified, and maps to exactly one IPv4 address (and no IPv6 addresses).  You also need to be using host-mode networking, since in any other mode this image isn't needed.)
+### Usage
 
-To use this image, just replace `analogic/poste.io` in your config with `dirtsimple/poste.io`.
+To use this image, just replace `analogic/poste.io` in your config with `dirtsimple/poste.io`.  But take careful note of the following:
+
+* You **must** configure the container with a fully-qualified hostname, whose IP address(es) **must** be listed in the public DNS system
+* The IP address(es) must be public IPs, and *should* have reverse DNS pointing to the container's hostname
+* You should be using **host-mode networking**, since in any other networking mode, the original `analogic/poste.io` image is sufficiently isolated without these patches!
+* By default, outgoing email to other mail servers will be sent via the first IP address returned by running `hostname -i` in the container.  If you need to override this, configure the container with an `OUTBOUND_MAIL_IP` environment variable specifying the IP address to be used.
