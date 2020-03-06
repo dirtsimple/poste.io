@@ -49,17 +49,9 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
   - sub localhost '$hostname'
 }}
 
-~ edit /opt/haraka-smtp/plugins/poste.js; {{
-  # Force outbound smtp to go via container host IP, unless overridden by
-  # another plugin.  (We only edit the haraka-smtp version because the
-  # haraka-submissions/plugins dir is a symlink.)
-  + after "plugin\.register_hook('init_child'"; {{
-    - "    plugin.register_hook('get_mx', 'get_mx');"
-  }}
-  + append ""; {{
-    - 'const my_outbound_ip = require("haraka-config").get("my-ip");'
-    - 'exports.get_mx = function (next, hmail, domain) { hmail.todo.notes.outbound_ip=my_outbound_ip; next(); }'
-  }}
+~ edit /opt/haraka-{smtp,submission}/config/plugins; {{
+  # Add our outbound IP routing plugin
+  - append 'outbound_ips'
 }}
 
 

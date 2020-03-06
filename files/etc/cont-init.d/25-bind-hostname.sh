@@ -17,12 +17,7 @@ listen587=${ipaddrs// /:587,}:587
 sed -i 's/^listen=.*:25$/listen='"$listen025/"                    /opt/haraka-smtp/config/smtp.ini
 sed -i 's/^listen=.*:587,.*:465$/listen='"$listen587,$listen465/" /opt/haraka-submission/config/smtp.ini
 
-
-# === Haraka should only do outbound connects on one IP ===
-
-# If OUTBOUND_MAIL_IP is set, use that, otherwise use the host's first IP
-outbound=${OUTBOUND_MAIL_IP:-${ipaddrs%% *}}
-
-echo "$outbound" >/opt/haraka-submission/config/my-ip
-echo "$outbound" >/opt/haraka-smtp/config/my-ip
+outbound=${ipaddrs// /,}
+echo "$outbound" >/opt/haraka-submission/config/my-ips
+echo "$outbound" >/opt/haraka-smtp/config/my-ips
 
