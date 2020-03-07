@@ -1,23 +1,98 @@
-## A Fully-Isolated Poste.io Image
+## A Fully-Virtual, Host-Mode Version of Poste.io
 
-[poste.io](https://poste.io) is a pretty cool email server implementation for docker.  Unfortunately, when used with host-mode networking (the poste.io recommended configuration) it doesn't play well with other mail servers on the same machine.  (Which makes it hard to e.g., have both a development and production instance.)
+[poste.io](https://poste.io) is a pretty cool email server implementation for docker.  Unfortunately, when used with host-mode networking (the poste.io recommended configuration) it doesn't play well with other mail servers on the same machine.  (Which makes it hard to e.g., have both a development and production instance, or to provide service to multiple clients on one machine.)
 
-Specifically, in host mode networking, poste.io binds its outward-facing services to *every* IP address of the machine, *and* binds several of its internal services to localhost ports (6379, 11332-11334, 11380, 11381, and 13001), which can conflict with things besides mail servers or other poste.io instances.
+Specifically, in host mode networking, poste.io binds its outward-facing services to *every* IP address of the machine, *and* binds several of its internal services to localhost ports (6379, 11332-11334, 11380, 11381, and 13001), which can conflict with things *besides* mail servers or other poste.io instances.
 
-As a result, poste.io not only doesn't play well with other mail servers, it doesn't play well with being used on a server that *does anything else*.  (It almost might as well not be a docker container at all!)
+As a result, poste.io not only doesn't play well with other mail servers (including other instances of itself), it *also* doesn't play well with being used on a server that *does anything else*.  (It almost might as well not be a docker container at all, in such a setup!)  And last, but not least, it sends email *out* on any old IP address as well, with no way to choose which IP you actually want to send things on.
 
-So this image fixes these issues, by tweaking service configurations to only bind services on the IPs that correspond to the container's hostname, and replace localhost TCP sockets with unix domain sockets, kept privately within the container.  (Thereby preventing conflicts or confusion with other bindings of those ports on the localhost interface.)
+So, this image fixes these issues by adding support for two environment variables and a configuration file, that let you not only control which IPs poste will listen on, but also which addresses poste will *send* mail on, optionally on a per-domain basis.  (Plus, it patches poste.io's default configuration so that all its internal services use unix domain sockets *inside* the docker container, instead of tying up localhost ports on the main server.)
 
-Unfortunately, poste's admin tool isn't written with unix sockets in mind, and neither are significant parts of haraka and its plugins.  Thus, in addition to adding the configuration files found under [files/](files/), this image also has to [patch a lot of files](files/patches).  (Most of the patching is done at image build time, but a few are tweaked at container start by an [init script](files/etc/cont-init.d/25-bind-hostname.sh), because nginx and haraka don't allow variable substitution in the part of their config files that set listening ports.)
+The first variable it adds is `LISTEN_ON`, which can be set to either a list of specific IP addresses to listen on, `host` (to listen only on addresses bound to the container's hostname), or `*` (for poste's default behavior of listening on every available interface).
 
-### Usage
+The second variable is `OUTBOUND_MAIL_IP`, which can be set to a specific IP to use, `*` to let the operating system pick an address, or it can be left empty or undefined, in which case the [configuration file](#managing-sender-ips) will be used to pick an IP address based on the domain the mail is sent from.  (Or if no IP is found in the config file, the first listening IP will be used, unless `LISTEN_ON` is `*`, in which case the operating system will pick the address.)
 
-To use this image, just replace `analogic/poste.io` in your config with `dirtsimple/poste.io`.  But take careful note of the following:
+### Basic Usage
 
-* You **must** configure the container with a fully-qualified hostname, whose IP address(es) **must** be listed in the public DNS system
-* The IP address(es) must be public IPs, and *should* have reverse DNS pointing to the container's hostname
-* You should be using **host-mode networking**, since in any other networking mode, the original `analogic/poste.io` image is sufficiently isolated without these patches!
-* By default, outgoing email to other mail servers will be sent via the first IP address returned by running `hostname -i` in the container.  If you need to override this, configure the container with an `OUTBOUND_MAIL_IP` environment variable specifying the IP address to be used, or create a `/data/outbound-hosts.yml` file as described below, with an appropriate `default` entry.
+To use this image, just replace `analogic/poste.io` in your config with `dirtsimple/poste.io`.  For example, you might use something like this as your `docker-compose.yml`, replacing `mail.example.com` with a suitable hostname  for your installation:
+
+```yaml
+version: "2.3"
+services:
+  poste:
+    image: dirtsimple/poste.io
+    restart: always
+    network_mode: host  # <-- a must-have for poste
+
+    # serve everything on `mail.example.com`, which will be the default HELO as well:
+    hostname: mail.example.com
+
+    volumes:
+      - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
+
+    # ==== Optional settings below: you don't need any environment vars by default ====
+
+    environment:
+      # Whitespace-separated list of IP addresses to listen on; first will be the
+      # default sending IP for outgoing mail.  If this variable is set to "host"
+      # (the default if not given), the container will listen on all the IPs (v4
+      # and v6) found in DNS or /etc/hosts for the container's hostname.  Or it can
+      # be set to "*", to listen on ALL available addresses (the way the standard
+      # poste.io image does).
+      - "LISTEN_ON=1.2.3.4 5.6.7.8 90a:11:12::13"
+
+      # Force *all* outgoing mail to go via the specified IP address.  Do NOT set
+      # this if you need multiple outgoing IPs: use a data/outbound-hosts.yml
+      # file instead! If this variable isn't set, the first LISTEN_ON address
+      # or DNS address for the hostname will be used, unless overridden in
+      # data/outbound-hosts.yml.  (You can also set this to '*' to disable
+      # IP selection entirely, and let the OS pick the IP to use.)
+      - "OUTBOUND_MAIL_IP=9.10.11.12"
+
+      # Other standard poste.io vars can also be used, e.g. HTTPS_PORT, etc.
+
+```
+
+Take note of the following, however:
+
+* You **must** configure the container with a fully-qualified hostname (e.g. `mail.example.com` above), with at least one IP address listed in the public DNS system
+* The hostname's IP addresses (or those listed in `LISTEN_ON`) must be public IPs attached to the server hosting the container
+* The listening IPs must *not* have any other services listening on ports 25, 80, 110, 143, 443, 466, 587, 993, 995, or 4190.  (Though you can change or disable some of those ports using poste.io's environment variables.)
+* You should be using **host-mode networking** (`network_mode: host` as shown above), since in any other networking mode, this image will behave roughly the same as the original `analogic/poste.io` image, and have the same limitations and caveats.  (Specifically, using any other networking mode means putting IP addresses in `LISTEN_ON`, `OUTBOUND_MAIL_IP`, or `outbound-hosts.yml` will not do anything useful.)
+* By default, outgoing email to other mail servers will be sent via the first IP address found in `LISTEN_ON` or returned by running `hostname -i` in the container.  If you need to override this behavior, configure the container with an `OUTBOUND_MAIL_IP` environment variable specifying the IP address to be used, OR create a `/data/outbound-hosts.yml` file as described in [Managing Sender IPs](#managing-sender-ips) below.
+
+Notice, by the way, that there are **no port mappings** used in this example, because the container uses host-mode networking and thus has direct access to all of the server's network interfaces.  This means that the IP addresses to be used by the container must be explicitly defined (either by the DNS address(es) of the hostname, or by setting the `LISTEN_ON` variable to the exact IP addresses) so that the container doesn't take over every IP address on the server.  (Unless that's what you *want*, in which case you can set `LISTEN_ON` to `*`.)
+
+### Managing Hostnames and IP Addresses
+
+In the simplest cases, an installation of this image would only need to use one hostname and IP, and:
+
+* The hostname would be set as the MX record of any domains to be hosted on the instance
+* Reverse DNS for the IP would point to the hostname
+* The default TLS certificate generated by the image would suffice
+* Users would log into webmail and admin using the single, primary hostname
+
+In more complex setups, you may wish to use multiple IPs or hostnames, for example to give each domain its own `mail.somedomain.com` website and/or MX, or to separate the sending reputation of different domains, while keeping to a single container.  These scenarios *can* be done, but note that it is not possible to 100% hide the fact that all the domains are being served by the same container, as the TLS certificate used for both the web interface and SMTP will list all the hostnames sharing the container.  (So if you need truly private instances, you will need to create separate containers.)
+
+But, if all you need is to give users domain-specific hostnames, or separate sender IP reputation for different domains, you *can* accomplish that with a single shared container.
+
+#### Vanity or Private-Label Logins
+
+Let's say you want to give each domain its own `mail.mydomain.com` address for users to put into their mail clients, log into on the web, use as an MX entry, etc.  You don't need multiple IP addresses to do this, just multiple hostnames.  All that's needed is to:
+
+* Have each vanity/private-label hostname resolve to one of the IP addresses the container listens on (e.g. by being a CNAME of the primary hostname)
+* Add each such hostname to the  "Alternative names" of your TLS certificate in the "Mailserver settings" of the primary admin interface
+
+You must, however, still pick *one* primary hostname for the container, as that's what you'll use to boot up the container and access the admin interface to create the TLS certificate.  The primary hostname will be the primary name on that certificate, with the vanity hostnames added as alternative names, once they're resolving correctly via public DNS, and the container is listening on the corresponding IP(s).
+
+#### Separate IPs for Different Domains
+
+If you want to give different domains their own IPs as well as separate hostnames, the steps are the same, except that each private-label hostname would have `A`  or `AAAA` records pointing to the relevant IP address, instead of a CNAME pointing to the primary hostname.  If you want these IPs to be used for outgoing mail as well, you'll also need to configure an `outbound-hosts.yml` file, as described in the next section.
+
+You will, of course, still need to configure the container to listen on all these IPs, either by explicitly putting them in `LISTEN_ON`, or by adding them as `A` or `AAAA` records for the primary hostname.  Or, if you're dedicating the entire server to a single poste instance, you can use `LISTEN_ON=*` to listen on every IP the box has.
+
+(Note, however, that since poste.io only supports using a single TLS certificate for all functions, it will still be possible for clients connecting to the container to see all the hostnames it serves, so if that isn't acceptable for your setup, then you will need to create separate instances instead, each serving separate IPs.)
 
 ### Managing Sender IPs
 
@@ -34,35 +109,20 @@ exampledomain.com:
   ip: 5.6.7.8
 ```
 
-With the above configuration, mails sent from `exampledomain.com` will be sent with a HELO of `mx.exampledomain.com`, using an outbound IP of `5.6.7.8`, and mail for any other domain will use the defaults.
+With the above configuration, mails sent from `exampledomain.com` will be sent with a HELO of `mx.exampledomain.com`, using an outbound IP of `5.6.7.8`, and mail for any other domain will use the defaults.  (Assuming, of course, that `5.6.7.8` is one of the addresses the container listens on.)
 
-Note that the information in this file is *not* validated against DNS or checked for security.  It is your responsibility to ensure that all `helo` hostnames exist in DNS with the matching `ip` , and that all listed IP addresses are actually valid for the network interfaces on your server.  In addition, for best deliverability, you should also:
+Note that the information in this file is *not* validated against DNS or checked for security (aside from a basic check that the IP is one listened to by the container).  It is your responsibility to ensure that all `helo` hostnames exist in DNS with the matching `ip` , and that all listed IP addresses are actually valid for the network interfaces on your server.
+
+In addition, for best deliverability, you should also:
 
 * Ensure that SPF will pass for a given domain + `helo`/`ip` combination
 * Ensure that the reverse DNS for the given `ip` values has a reasonable result (preferably the same as the `helo`)
-* Ensure that each `helo` address used as an MX is listed in the "Alternative names" of your TLS certificate in the "Mailserver settings" of the poste admin interface, and that its corresponding `ip` is listed in an `A` or `AAAA` record for the *container's* hostname.  (So that the container will listen for incoming mail on that address, and respond with a valid certificate.)  This step is not necessary for domains that simply use the container's hostname as their MX.
+* Ensure that each `helo` address used as an MX is listed in the "Alternative names" of your TLS certificate in the "Mailserver settings" of the poste admin interface, and that its corresponding `ip` is an address the container listens on.
 
-And of course, you will need to update all of this information whenever any of the configuration changes.  If you control DNS for all the relevant domains yourself, you may be able to generate this file automatically from your domain list and DNS: e.g. by looking up MX records and their corresponding addresses.  (But you shouldn't trust the DNS for domains you don't control, as that would let your clients pick their own sending IPs!)
+And of course, you will need to update all of this information whenever any of the configuration changes!  If you control DNS for all the relevant domains yourself, you may be able to generate this file automatically from your domain list and DNS: e.g. by looking up MX records and their corresponding addresses.  (But you shouldn't trust the DNS for domains you don't control, as that would effectively let your clients pick their own sending IPs.)
 
-### Docker-Compose Example
+### Can I use these changes with poste.io's PRO version?
 
-Here's a trivial `docker-compose.yml` setup for using this image:
+I don't know, but you can find out by cloning this repo, changing the `FROM` in the Dockerfile, and trying to run the resulting build.  It *might* work, since the main difference between the two versions is some admin interface code left out of the free version.  But if that left-out code contains hardcoded references to localhost or 127.0.0.1, then those admin features will probably break, as they won't have been patched to use unix-domain sockets instead.
 
-```yaml
-version: "2.3"
-services:
-  poste:
-    image: dirtsimple/poste.io
-    restart: always
-    network_mode: host
-
-    # to serve everything on `mail.example.com`:
-    hostname: mail
-    domainname: example.com
-
-    volumes:
-      - ./data:/data
-      - /etc/localtime:/etc/localtime:ro
-```
-
-This example assumes that `mail.example.com` is mapped in the public DNS to one or more IP addresses on the server where the container runs, and that *none* of those IP addresses have any other services listening on ports 25, 80, 110, 143, 443, 466, 587, 993, 995, or 4190.  (You should, of course, replace `mail` and `example.com` with appropriate values for your installation.)
+If they do break, and you can figure out what to patch (most likely, PHP code in `/opt/admin/src/ProBundle/`), let me know.  (Or if it works fine, I'd love to know that, too.)

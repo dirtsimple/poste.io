@@ -27,8 +27,9 @@ const yml = require('js-yaml');
 const hostname = require('os').hostname();
 
 const my_ips = require("haraka-config").get("my-ips").trim().split(/\s*,\s*/);
-const default_ip = process.env.OUTBOUND_MAIL_IP || process.env.OUTBOUND_DEFAULT_IP || my_ips[0];
+const default_ip = process.env.OUTBOUND_MAIL_IP || my_ips[0];
 
+const have_ip = my_ips.reduce((map, addr)=>{map[addr]=true; return map;}, {});
 
 exports.hook_get_mx = async function(next, hmail, domain) {
     const plugin = this;
@@ -42,7 +43,15 @@ exports.hook_get_mx = async function(next, hmail, domain) {
             const errmsg = `${key} must be an object with 'helo' and 'ip' strings: got ${JSON.stringify(target)}`;
             throw new Error(errmsg);
         }
-        plugin.loginfo(`Setting outbound HELO = ${target.helo}, IP = ${target.ip}`);
+
+        // '*' means "let the OS pick an IP for the target route"
+        if (target.ip === '*') return;
+
+        if (!have_ip[target.ip] && !have_ip['*'] && target.ip !== default_ip) {
+            throw new Error(`${key}: ${ip} is not a listed address for this server instance`);
+        }
+
+        plugin.loginfo(`Setting outbound HELO = ${target.helo}, IP = ${target.ip} (${key})`);
         hmail.todo.notes.outbound_helo = target.helo;
         hmail.todo.notes.outbound_ip   = target.ip;
     }
@@ -51,7 +60,7 @@ exports.hook_get_mx = async function(next, hmail, domain) {
         set_outbound({"default": {helo: hostname, ip: default_ip}}, 'default');
     }
 
-    if ( process.env.OUTBOUND_MAIL_IP || my_ips.length === 1 ) {
+    if ( process.env.OUTBOUND_MAIL_IP || my_ips.length === 1 || default_ip === '*' ) {
         use_default();
     } else {
         const from_domain = hmail.todo.mail_from.host;
@@ -73,7 +82,7 @@ exports.hook_get_mx = async function(next, hmail, domain) {
             }
         } catch (err) {
             // Fall back to default IP
-            this.logerror(`Error loading /data/outbound-hosts.yml: ${err.message}`);
+            this.logerror(`Error using /data/outbound-hosts.yml: ${err.message}`);
             use_default();
         }
     }
