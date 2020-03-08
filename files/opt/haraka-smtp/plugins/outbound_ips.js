@@ -60,7 +60,7 @@ exports.hook_get_mx = async function(next, hmail, domain) {
         set_outbound({"default": {helo: hostname, ip: default_ip}}, 'default');
     }
 
-    if ( process.env.OUTBOUND_MAIL_IP || my_ips.length === 1 || default_ip === '*' ) {
+    if ( process.env.OUTBOUND_MAIL_IP || my_ips.length === 1 ) {
         use_default();
     } else {
         const from_domain = hmail.todo.mail_from.host;

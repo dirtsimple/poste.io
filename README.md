@@ -10,7 +10,7 @@ So, this image fixes these issues by adding support for two environment variable
 
 The first variable it adds is `LISTEN_ON`, which can be set to either a list of specific IP addresses to listen on, `host` (to listen only on addresses bound to the container's hostname), or `*` (for poste's default behavior of listening on every available interface).
 
-The second variable is `OUTBOUND_MAIL_IP`, which can be set to a specific IP to use, `*` to let the operating system pick an address, or it can be left empty or undefined, in which case the [configuration file](#managing-sender-ips) will be used to pick an IP address based on the domain the mail is sent from.  (Or if no IP is found in the config file, the first listening IP will be used, unless `LISTEN_ON` is `*`, in which case the operating system will pick the address.)
+The second variable is `SEND_ON`, which can also be set to a list of IP addresses, `host`, or `*`.  (If unset or empty, it defaults to the value set in `LISTEN_ON`.)  By default, mail will be sent from the first IP address in the resulting list, unless it's `*`, in which case the operating system will pick the IP.  If there's only one sending IP,  all mail will be sent from the default IP.  Otherwise, a [configuration file](#managing-sender-ips) will be used to pick an IP address from the list, based on the domain the mail is being sent from.
 
 ### Basic Usage
 
@@ -34,21 +34,22 @@ services:
     # ==== Optional settings below: you don't need any environment vars by default ====
 
     environment:
-      # Whitespace-separated list of IP addresses to listen on; first will be the
-      # default sending IP for outgoing mail.  If this variable is set to "host"
-      # (the default if not given), the container will listen on all the IPs (v4
-      # and v6) found in DNS or /etc/hosts for the container's hostname.  Or it can
-      # be set to "*", to listen on ALL available addresses (the way the standard
-      # poste.io image does).
+      # Whitespace-separated list of IP addresses to listen on. If this variable
+      # is set to "host" (which is also the default if it's empty or unset), the
+      # container will listen on all the IPs (v4 and v6) found in DNS or /etc/hosts
+      # for the container's hostname.  Or it can be set to "*", to listen on ALL
+      # available addresses (the way the standard poste.io image does).
       - "LISTEN_ON=1.2.3.4 5.6.7.8 90a:11:12::13"
 
-      # Force *all* outgoing mail to go via the specified IP address.  Do NOT set
-      # this if you need multiple outgoing IPs: use a data/outbound-hosts.yml
-      # file instead! If this variable isn't set, the first LISTEN_ON address
-      # or DNS address for the hostname will be used, unless overridden in
-      # data/outbound-hosts.yml.  (You can also set this to '*' to disable
-      # IP selection entirely, and let the OS pick the IP to use.)
-      - "OUTBOUND_MAIL_IP=9.10.11.12"
+      # Whitespace-separated list of IP addresses mail can be sent from; the first
+      # one in the list will be the default.  Like LISTEN_ON, it can be set to '*'
+      # for "any available address" or 'host' for "any IP (v4 or v6) attached to
+      # the container hostname".  If the list expands to only one address, it
+      # will be used for all outgoing mail.  Otherwise, data/outbound-hosts.yml
+      # is read to determine the outgoing IP for each domain, and the result is
+      # validated against this list.  If this variable is empty or unset, it defaults
+      # to whatever LISTEN_ON was set to.
+      - "SEND_ON=9.10.11.12"
 
       # Other standard poste.io vars can also be used, e.g. HTTPS_PORT, etc.
 
@@ -59,8 +60,8 @@ Take note of the following, however:
 * You **must** configure the container with a fully-qualified hostname (e.g. `mail.example.com` above), with at least one IP address listed in the public DNS system
 * The hostname's IP addresses (or those listed in `LISTEN_ON`) must be public IPs attached to the server hosting the container
 * The listening IPs must *not* have any other services listening on ports 25, 80, 110, 143, 443, 466, 587, 993, 995, or 4190.  (Though you can change or disable some of those ports using poste.io's environment variables.)
-* You should be using **host-mode networking** (`network_mode: host` as shown above), since in any other networking mode, this image will behave roughly the same as the original `analogic/poste.io` image, and have the same limitations and caveats.  (Specifically, using any other networking mode means putting IP addresses in `LISTEN_ON`, `OUTBOUND_MAIL_IP`, or `outbound-hosts.yml` will not do anything useful.)
-* By default, outgoing email to other mail servers will be sent via the first IP address found in `LISTEN_ON` or returned by running `hostname -i` in the container.  If you need to override this behavior, configure the container with an `OUTBOUND_MAIL_IP` environment variable specifying the IP address to be used, OR create a `/data/outbound-hosts.yml` file as described in [Managing Sender IPs](#managing-sender-ips) below.
+* You should be using **host-mode networking** (`network_mode: host` as shown above), since in any other networking mode, this image will behave roughly the same as the original `analogic/poste.io` image, and have the same limitations and caveats.  (Specifically, using any other networking mode means putting specific IP addresses into `LISTEN_ON`, `SEND_ON`, or `outbound-hosts.yml` will not do anything useful!)
+* By default, outgoing email to other mail servers will be sent via the first IP address found in `LISTEN_ON` or returned by running `hostname -i` in the container.  If you need to override this behavior, configure the container with `SEND_ON` set to the specific IP address to be used, OR create a `/data/outbound-hosts.yml` file as described in [Managing Sender IPs](#managing-sender-ips) below.
 
 Notice, by the way, that there are **no port mappings** used in this example, because the container uses host-mode networking and thus has direct access to all of the server's network interfaces.  This means that the IP addresses to be used by the container must be explicitly defined (either by the DNS address(es) of the hostname, or by setting the `LISTEN_ON` variable to the exact IP addresses) so that the container doesn't take over every IP address on the server.  (Unless that's what you *want*, in which case you can set `LISTEN_ON` to `*`.)
 
@@ -88,7 +89,7 @@ You must, however, still pick *one* primary hostname for the container, as that'
 
 #### Separate IPs for Different Domains
 
-If you want to give different domains their own IPs as well as separate hostnames, the steps are the same, except that each private-label hostname would have `A`  or `AAAA` records pointing to the relevant IP address, instead of a CNAME pointing to the primary hostname.  If you want these IPs to be used for outgoing mail as well, you'll also need to configure an `outbound-hosts.yml` file, as described in the next section.
+If you want to give different domains their own IPs as well as separate hostnames, the steps are the same, except that each private-label hostname would have `A`  or `AAAA` records pointing to the relevant IP address, instead of a CNAME pointing to the primary hostname.  If you want these IPs to be used for outgoing mail as well, you'll also need to configure an `outbound-hosts.yml` file, as described in the next section.  (And if needed, add them to the `SEND_ON` variable.)
 
 You will, of course, still need to configure the container to listen on all these IPs, either by explicitly putting them in `LISTEN_ON`, or by adding them as `A` or `AAAA` records for the primary hostname.  Or, if you're dedicating the entire server to a single poste instance, you can use `LISTEN_ON=*` to listen on every IP the box has.
 
@@ -111,7 +112,7 @@ exampledomain.com:
 
 With the above configuration, mails sent from `exampledomain.com` will be sent with a HELO of `mx.exampledomain.com`, using an outbound IP of `5.6.7.8`, and mail for any other domain will use the defaults.  (Assuming, of course, that `5.6.7.8` is one of the addresses the container listens on.)
 
-Note that the information in this file is *not* validated against DNS or checked for security (aside from a basic check that the IP is one listened to by the container).  It is your responsibility to ensure that all `helo` hostnames exist in DNS with the matching `ip` , and that all listed IP addresses are actually valid for the network interfaces on your server.
+Note that the information in this file is *not* validated against DNS or checked for security (aside from a basic check that the IP is included in the expansion of `SEND_ON`).  It is your responsibility to ensure that all `helo` hostnames exist in DNS with the matching `ip` , and that all listed IP addresses are actually valid for the network interfaces on your server.
 
 In addition, for best deliverability, you should also:
 
