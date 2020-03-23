@@ -39,6 +39,11 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
   }}
 }}
 
+~ edit /opt/admin/src/AppBundle/CommandInternal/DeliverQuarantineCommand.php; {{
+  # Quarantine "deliver" / deliver:quarantine should send to host, not localhost
+  - sub "\['msmtp', '-f'.*" "['msmtp', '--host', gethostname(), '-f', \$meta['from']];"
+}}
+
 ~ edit /etc/nginx/sites-enabled.templates/{no-,}https; {{
   # Remove the listen lines that lack an address
   - del 'listen __HTTP_PORT__;'
