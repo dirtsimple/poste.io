@@ -166,3 +166,22 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
   # The above change won't take effect unless the service cache is cleared:
   rm -rf /opt/admin/var/cache/prod
 }}
+
+# === Support Roundcube plugins and persistent encryption key
+
+# Load 48-digit hex des_key from DES_KEY
+~ edit /etc/cont-init.d/20-apply-server-config; {{
+  - sub '[$]key = bin2hex' '$key = getenv("DES_KEY") ?: bin2hex'
+}}
+
+# Autoload roundcube plugins from /data/roundcube/installed-plugins
+
+~ edit /opt/www/webmail/config/config.inc.php; {{
+  + append ""; {{
+    - 'foreach ( explode("\\n", file_get_contents("/data/roundcube/installed-plugins")) as $line ) {'
+    - '    $line = trim($line);'
+    - '    if ( "" === $line || substr($line,0,1) === "#" || ! is_dir("plugins/$line")) continue;'
+    - '    $config["plugins"][] = $line;'
+    - '}'
+  }}
+}}

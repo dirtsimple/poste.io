@@ -1,6 +1,37 @@
-## A Fully-Virtual, Host-Mode Version of Poste.io
+## Enhanced Poste.io (IP Management & Roundcube Plugins)
 
-[poste.io](https://poste.io) is a pretty cool email server implementation for docker.  Unfortunately, when used with host-mode networking (the poste.io recommended configuration) it doesn't play well with other mail servers on the same machine.  (Which makes it hard to e.g., have both a development and production instance, or to provide service to multiple clients on one machine.)
+[poste.io](https://poste.io) is a pretty cool email server implementation for docker.  But this image makes it *cooler*.
+
+Specifically, it lets you:
+
+* Use host-mode networking and still:
+  * Run things besides poste on the same server without localhost port conflicts
+  * Have multiple poste instances (e.g. dev and prod) running on the same server, listening on different IPs
+  * Restrict which IP addresses poste listens on, so non-poste mail servers can run on the same server
+  * Select which IP addresses poste *sends* mail from, [on a domain-by-domain basis](#managing-sender-ips)
+* Install and use [custom Roundcube plugins](#using-custom-roundcube-plugins) from the `/data` volume
+* Optionally [use a persistent `DES_KEY`](#the-des_key-variable) for Roundcube, to support plugins that store encrypted data
+
+#### Contents
+
+<!-- toc -->
+
+- [Why Is This Image Needed?](#why-is-this-image-needed)
+- [Basic Usage](#basic-usage)
+- [Managing Hostnames and IP Addresses](#managing-hostnames-and-ip-addresses)
+  * [Vanity or Private-Label Logins](#vanity-or-private-label-logins)
+  * [Separate IPs for Different Domains](#separate-ips-for-different-domains)
+- [Managing Sender IPs](#managing-sender-ips)
+- [IPv6 Support](#ipv6-support)
+- [Using Custom Roundcube Plugins](#using-custom-roundcube-plugins)
+  * [The DES_KEY Variable](#the-des_key-variable)
+- [Can I use these changes with poste.io's PRO version?](#can-i-use-these-changes-with-posteios-pro-version)
+
+<!-- tocstop -->
+
+### Why Is This Image Needed?
+
+One of the big challenges of using the stock poste image with host-mode networking (the poste.io recommended configuration) is that it doesn't play well with other mail servers on the same machine.  (Which makes it hard to e.g., have both a development and production instance, or to provide service to multiple clients on one machine.)
 
 Specifically, in host mode networking, poste.io binds its outward-facing services to *every* IP address of the machine, *and* binds several of its internal services to localhost ports (6379, 11332-11334, 11380, 11381, and 13001), which can conflict with things *besides* mail servers or other poste.io instances.
 
@@ -122,8 +153,24 @@ In addition, for best deliverability, you should also:
 
 And of course, you will need to update all of this information whenever any of the configuration changes!  If you control DNS for all the relevant domains yourself, you may be able to generate this file automatically from your domain list and DNS: e.g. by looking up MX records and their corresponding addresses.  (But you shouldn't trust the DNS for domains you don't control, as that would effectively let your clients pick their own sending IPs.)
 
+### IPv6 Support
+
+This image supports listening on IPv6 addresses, and in principle allows sending mail via them as well.  However, since relatively few mailservers are actually configured to receive mail via IPv6, we don't recommend actually *using* IPv6 addresses for outgoing mail, unless your server will be communicating exclusively with other mailservers that support IPv6.  (You should also test to make sure IPv6 sending actually works correctly in your networking environment, and to see what happens when you try sending outbound IPv6 mail to an IPv4-only server.)
+
+### Using Custom Roundcube Plugins
+
+On startup, this image will automatically install, activate, and attempt to run SQL initialization for any Roundcube plugins found as subdirectories of `/data/roundcube-plugins`.  Only plugins without dependencies (other than those already installed with Roundcube) will work correctly.  (Plugins should generally be installed with world-readable permissions, but *not* owned or writable by the www-data user or group, so that file-writing exploits don't become remote execution exploits.)
+
+If you need to force a re-run of a plugin's setup SQL, you can remove its name from the `/data/roundcube/installed-plugins` file, then restart the container.  You can uninstall a plugin by stopping the container, removing it from the `/data/roundcube-plugins` directory, and then starting the container again.  (Any SQL changes made by the plugin will remain in place.)
+
+This feature is still quite experimental (and has only been tested with one plugin so far), so be sure to experiment with it on a development instance before using it in production.
+
+#### The DES_KEY Variable
+
+Some plugins (such as [ident_switch](https://bitbucket.org/BoresExpress/ident_switch)) may need to store encrypted data in the roundcube database.  By default, poste generates a new encryption key on every container start, rendering such data unable to be decrypted.  To work around this issue, you can set a `DES_KEY` environment variable containing a string of exactly 48 random hex characters.  The given string will be used across restarts, allowing encrypted data stored in a previous session to be decrypted correctly.  You can generate a suitable key using `openssl rand -hex 24` (which will generate 24 random bytes = 48 hex digits).  The string used must be *exactly* 48 hex digits, or else the container's webmail service will silently cease to function.
+
 ### Can I use these changes with poste.io's PRO version?
 
-I don't know, but you can find out by cloning this repo, changing the `FROM` in the Dockerfile, and trying to run the resulting build.  It *might* work, since the main difference between the two versions is some admin interface code left out of the free version.  But if that left-out code contains hardcoded references to localhost or 127.0.0.1, then those admin features will probably break, as they won't have been patched to use unix-domain sockets instead.
+I don't know, but you can find out by cloning this repo, changing the `FROM` in the Dockerfile, and trying to run the resulting build.  It *might* work, since the main difference between the two versions is some admin interface code left out of the free version.  But if that left-out code contains hardcoded or implicit references to localhost or 127.0.0.1, then those admin features will probably break, as they won't have been patched to use unix-domain sockets (or the container's hostname) instead.
 
-If they do break, and you can figure out what to patch (most likely, PHP code in `/opt/admin/src/ProBundle/`), let me know.  (Or if it works fine, I'd love to know that, too.)
+If they do break, and you can figure out what to patch (most likely, PHP code in `/opt/admin/src/ProBundle/`), let me know.  (Or if it works fine, I'd love to know that, too!)
