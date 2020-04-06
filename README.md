@@ -26,6 +26,7 @@ Specifically, it lets you:
 - [Using Custom Roundcube Plugins](#using-custom-roundcube-plugins)
   * [The DES_KEY Variable](#the-des_key-variable)
 - [Can I use these changes with poste.io's PRO version?](#can-i-use-these-changes-with-posteios-pro-version)
+- [Docker Tags](#docker-tags)
 
 <!-- tocstop -->
 
@@ -174,3 +175,8 @@ Some plugins (such as [ident_switch](https://bitbucket.org/BoresExpress/ident_sw
 I don't know, but you can find out by cloning this repo, changing the `FROM` in the Dockerfile, and trying to run the resulting build.  It *might* work, since the main difference between the two versions is some admin interface code left out of the free version.  But if that left-out code contains hardcoded or implicit references to localhost or 127.0.0.1, then those admin features will probably break, as they won't have been patched to use unix-domain sockets (or the container's hostname) instead.
 
 If they do break, and you can figure out what to patch (most likely, PHP code in `/opt/admin/src/ProBundle/`), let me know.  (Or if it works fine, I'd love to know that, too!)
+
+### Docker Tags
+
+Apart from `latest`, and `unstable`, current versions of this image on docker hub are tagged as a combination of the upstream version and a version number for this image's additions.  For example, `2.2.2-0.3.1` is the `0.3.1` revision of upstream poste's `2.2.2` tag, if you need to pin a specific revision.  You can also just use the upstream version (e.g. `2.2.2`) to get the latest patches for that upstream version, or `latest` to get the most-recent stable version.  The `unstable` tag always refers to the current `master` branch from github.
+
