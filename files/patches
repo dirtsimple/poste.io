@@ -36,6 +36,9 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
   + append ""; {{
     - "\$config['default_host'] = 'ssl://' . gethostname();"
     - "\$config['smtp_server']  = 'tls://' . gethostname() . ':587';"
+    - "\$config['managesieve_port'] = 4190;"
+    - "\$config['managesieve_host'] = gethostname();"
+    - "\$config['managesieve_usetls'] = true;"
   }}
 }}
 
