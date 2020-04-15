@@ -1,4 +1,5 @@
-FROM analogic/poste.io:2.2.2
+ARG UPSTREAM=2.2.2
+FROM analogic/poste.io:$UPSTREAM
 RUN apt-get update && apt-get install less  # 'less' is Useful for debugging
 
 # Default to listening only on IPs bound to the container hostname
