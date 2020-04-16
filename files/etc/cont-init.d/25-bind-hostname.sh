@@ -54,6 +54,8 @@ fi
 if [[ $listen != *'*'* ]]; then
 	sub '^listen=.*:25$'         "listen=${listen//,/:25,}:25"                          /opt/haraka-smtp/config/smtp.ini
 	sub '^listen=.*:587,.*:465$' "listen=${listen//,/:587,}:587,${listen//,/:465,}:465" /opt/haraka-submission/config/smtp.ini
+else
+	listen=::0
 fi
 
 # Our Haraka sender-ip control plugin will validate outgoing IPs against the
@@ -62,3 +64,8 @@ fi
 
 echo "$send" >/opt/haraka-submission/config/my-ips
 echo "$send" >/opt/haraka-smtp/config/my-ips
+
+# Our inbound IP plugin will translate local connections to 127.0.0.1
+
+echo "$listen" >/opt/haraka-submission/config/listen-ips
+echo "$listen" >/opt/haraka-smtp/config/listen-ips

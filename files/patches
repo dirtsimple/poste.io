@@ -66,6 +66,9 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
 }}
 
 ~ edit /opt/haraka-{smtp,submission}/config/plugins; {{
+  # Fake remote IP to 127.0.0.1 when connection is from localhost
+  - after "status_http" \
+    "inbound_ips"
   # Add our outbound IP routing plugin
   - append 'outbound_ips'
 }}
