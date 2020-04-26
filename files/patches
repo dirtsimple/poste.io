@@ -50,6 +50,11 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
   }}
 }}
 
+~ edit /healthcheck/nginx.sh; {{
+  - sub "http://127.0.0.1" '"http://$(hostname)"'
+}}
+
+
 ~ edit /opt/admin/src/AppBundle/CommandInternal/DeliverQuarantineCommand.php; {{
   # Quarantine "deliver" / deliver:quarantine should send to host, not localhost
   - sub "\['msmtp', '-f'.*" "['msmtp', '--host', gethostname(), '-f', \$meta['from']];"
@@ -157,6 +162,10 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
 ~ edit /etc/rspamd/local.d/{redis,statistic}.conf; {{
   - sub 'servers = "127.*;$' \
         'servers = "'"$redis"'";'
+}}
+
+~ edit /healthcheck/redis.sh; {{
+  - sub '-h "127.0.0.1"' "-s '$redis'";
 }}
 
 ~ edit /opt/admin/src/AppBundle/Resources/config/services.yml; {{
