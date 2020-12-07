@@ -29,11 +29,11 @@ __sedline()  { sed+="${*/#/\\$'\n'}"; }
 shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +='{ ::__;::(){ ((!$#))||{ shift;"${__dsl__[@]-::no-dsl}" ' ~='{ ::__;::(){ ((!$#))||{ shift; ' -='"${__dsl__[@]-::no-dsl}" ' '{{=return;return;};__blk__=;set -- "${__blarg__[@]:1}"; ' '}}=};__:: 0 "$@";}';::block(){ ((!$#))||local __dsl__=("$@");${__blk__:+::};};__bsp__=0;::__(){ __bstk__[__bsp__++]="${__blk__:+__blk__=1;$(declare -f ::)}";};__::(){ local __blarg__=("$@");__blk__=1;:: "$@"||set -- $?;__blk__=;local REPLY;${__bstk__[--__bsp__]:+eval "${__bstk__[__bsp__]}"}||:;return $1;}
 
 
-# === UI bug fix for 2.2.19 ===
+# === Log rotation bug fix ===
 
-~ edit /opt/admin/app/Resources/views/base.html.twig; {{
-  # Fix missing hostnames on IP stats
-  - sub "on('load'," "on('load change',"
+~ edit /etc/logrotate.d/roundcube; {{
+  # Don't recursively rotate the rotated logs
+  - sub "/opt/www/webmail/logs/\\* " "/opt/www/webmail/logs/*.log "
 }}
 
 
