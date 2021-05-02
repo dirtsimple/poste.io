@@ -168,6 +168,14 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
   - sub '-h "127.0.0.1"' "-s '$redis'";
 }}
 
+~ edit /bin/clear-idle-connections; {{
+  - sub "redis-cli'" "redis-cli', '-s', '$redis'"
+}}
+
+~ edit /bin/poste-redis-statistics; {{
+  - sub "redis-cli" "redis-cli -s '$redis'"
+}}
+
 ~ edit /opt/admin/src/AppBundle/Resources/config/services.yml; {{
   - sub '^  Predis\\Client: .*$' \
          '  Predis\\Client: { arguments: [ "unix:'"$redis"'" ] }'
