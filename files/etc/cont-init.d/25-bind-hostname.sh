@@ -2,13 +2,21 @@
 
 # Given a variable name and setting, get the matching IP addresses as a comma-delimited list
 function ip_list() {
-	local -n ips=$1
+	local -n ips=$1 v6=${1}_b
 	case $2 in
 		host) ips=$(hostname -i) ;;
 		'*')  ips='* ::' ;;
 		*)    read -ra ips <<<"$2"; ips=("${ips[*]}") ;;  # trim/normalize whitespace
 	esac
 	ips="${ips// /,}"; ips=${ips:-*,::}  # handle empty list
+
+	# Create a bracketed version for configs that need [host]:port for IPv6 addrs
+	local addr i
+	IFS=, read -ra addr <<<"$ips"
+	for i in "${!addr[@]}"; do
+		case ${addr[i]} in *:*) addr[i]="[${addr[i]}]" ;; esac
+	done
+	v6=("${addr[*]}"); v6="${v6// /,}"
 }
 
 # Expand LISTEN_ON and SEND_ON into comma-delimited IP lists in `listen` and `send`
@@ -36,9 +44,8 @@ else
 	# We have explicit listening IPs (or wildcards): give them to dovecot and nginx
 	sub '^#\?listen = .*' "listen = ${listen}"        /etc/dovecot/dovecot.conf
 
-	IFS=, read -ra ipaddrs <<<"$listen"
+	IFS=, read -ra ipaddrs <<<"$listen_b"
 	for addr in "${ipaddrs[@]}"; do
-		if [[ "$addr" == *:* ]]; then addr="[${addr}]"; fi  # nginx needs IPv6 addresses to be in '[]'
 		# Add listen lines above the default ones, for the specified address, port and options
 		ins "__HOST__:$HTTP_PORT"  "    listen $addr:$HTTP_PORT;"      /etc/nginx/sites-enabled/administration
 		ins "__HOST__:$HTTPS_PORT" "    listen $addr:$HTTPS_PORT ssl;" /etc/nginx/sites-enabled/administration
@@ -52,8 +59,8 @@ fi
 # === Haraka needs each IP address to be listed explicitly, unless you're using wildcards ===
 
 if [[ $listen != *'*'* ]]; then
-	sub '^listen=.*:25$'         "listen=${listen//,/:25,}:25"                          /opt/haraka-smtp/config/smtp.ini
-	sub '^listen=.*:587,.*:465$' "listen=${listen//,/:587,}:587,${listen//,/:465,}:465" /opt/haraka-submission/config/smtp.ini
+	sub '^listen=.*:25$'         "listen=${listen_b//,/:25,}:25"                            /opt/haraka-smtp/config/smtp.ini
+	sub '^listen=.*:587,.*:465$' "listen=${listen_b//,/:587,}:587,${listen_b//,/:465,}:465" /opt/haraka-submission/config/smtp.ini
 else
 	listen=::0
 fi
