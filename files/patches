@@ -118,7 +118,7 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
 }}
 ~ edit /etc/dovecot/sieve/report-{spam,ham}.sieve; {{
   - sub '"rspamc" \[' \
-        '"rspamc" ["-h" "'"$rspam_web"'" '
+        '"rspamc" ["--connect='"$rspam_web"'", '
 }}
 
 # Disable dovecot quota service on localhost
