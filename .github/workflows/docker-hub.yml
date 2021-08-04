@@ -9,16 +9,17 @@ jobs:
     steps:
       - name: Calculate Tags
         env:
-          ref: ${{ github.ref}}
+          ref: ${{ github.ref }}
           repo: ${{ github.repository }}
         run: |
-          if [[ $ref == refs/heads/master ]]; then
+          ref=${ref##*/}
+          if [[ $ref == master ]]; then
             tags=$repo:unstable
-          elif [[ $ref =~ ^([0-9.]+)-((([0-9]+[.])[0-9]+[.])([.][0-9+])*)  ]]; then
+          elif [[ $ref =~ ^([0-9.]+)-((([0-9]+[.])[0-9]+[.])([.][0-9+])*) ]]; then
             upstream=${BASH_REMATCH[1]}
             minor=${BASH_REMATCH[3]}x
             major=${BASH_REMATCH[4]}x
-            tags=$repo:latest,$repo:$ref,$repo:$upstream-$minor,$repo:$upstream-$major,$repo:upstream
+            tags=$repo:latest,$repo:$ref,$repo:$upstream-$minor,$repo:$upstream-$major,$repo:$upstream
           else
             echo "Bad tag: $ref"
             exit 1
