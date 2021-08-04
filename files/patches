@@ -136,6 +136,12 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
         "socket.connect('$quota');"
 }}
 
+# Haraka logs should show the redis socket
+~ edit /usr/lib/node_modules/Haraka/node_modules/haraka-plugin-redis/index.js; {{
+  - sub 'redis://\${opts.host}:\${opts.port}' \
+        'redis://${opts.path}'
+}}
+
 # Haraka web servers need to listen on unix sockets
 
 ~ edit /opt/haraka-smtp/config/http.ini; {{
