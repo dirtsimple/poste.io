@@ -2,20 +2,40 @@ name: Build and Push to Docker Hub
 
 on:
   push:
-    branches: [ master ]
 
 jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
+      - name: Calculate Tags
+        env:
+          ref: ${{ github.ref}}
+          repo: ${{ github.repository }}
+        run: |
+          if [[ $ref == refs/heads/master ]]; then
+            tags=$repo:unstable
+          elif [[ $ref =~ ^([0-9.]+)-((([0-9]+[.])[0-9]+[.])([.][0-9+])*)  ]]; then
+            upstream=${BASH_REMATCH[1]}
+            minor=${BASH_REMATCH[3]}x
+            major=${BASH_REMATCH[4]}x
+            tags=$repo:latest,$repo:$ref,$repo:$upstream-$minor,$repo:$upstream-$major,$repo:upstream
+          else
+            echo "Bad tag: $ref"
+            exit 1
+          fi
+
+          echo "$tags"
+          echo "build_tags=$tags" >> $GITHUB_ENV
+
       - name: Login to DockerHub
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push
-        id: docker_build
+        id: build
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: ${{ github.repository }}:unstable
+          tags: ${{ env.build_tags }}
