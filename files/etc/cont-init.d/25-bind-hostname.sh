@@ -35,6 +35,7 @@ bindhost=$(hostname)
 
 # We only care about the hostname for connnecting to the submission port
 sub 'submission_host = .*:587$' "submission_host = $bindhost:587" /etc/dovecot/conf.d/15-lda.conf
+sub '^host.*' "host $bindhost" /etc/msmtprc
 
 if [[ "$LISTEN_ON" == host ]]; then
 	# No IPs given, just use the hostname
