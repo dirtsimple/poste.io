@@ -14,9 +14,10 @@
 # loopback interface.
 
 set -eu  # fail on any errors or undefined variables
+shopt -s nullglob
 
 # A tiny DSL for editing files with sed: `~ edit files...; {{ commands }}`
-edit() { local sed; ::block sed-dsl; sed -i -e "$sed" "$@"; }
+edit() { local sed; ::block sed-dsl; if (($#)); then sed -i -e "$sed" "$@"; fi; }
 sed-dsl()    { sed."$@"; }
 sed.sub()    { sed+="s~$1~$2~${3-}"$'\n'; }
 sed.del()    { sed+="${1+/$1/}d"$'\n'; }
@@ -31,7 +32,8 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
 
 # === Upstream bug fixes ===
 
-~ edit opt/admin/src/AppBundle/Resources/views/Box/edit.html.twig; {{
+# Remove this when 2.3.x is stable
+~ edit opt/admin/src/AppBundle/Resources/views/Box/edit.html[.]twig; {{
   # Fix typo
   - sub "refereneId" "referenceId"
 }}
@@ -55,7 +57,10 @@ shopt -q expand_aliases||{ unalias -a;shopt -s expand_aliases;};builtin alias +=
 }}
 
 
-~ edit /opt/admin/src/AppBundle/CommandInternal/DeliverQuarantineCommand.php; {{
+~ edit \
+    /opt/admin/src/AppBundle/CommandInternal/DeliverQuarantineCommand[.]php \
+    /opt/admin/src/Base/CommandInternal/DeliverQuarantineCommand[.]php ;
+{{
   # Quarantine "deliver" / deliver:quarantine should send to host, not localhost
   - sub "\['msmtp', '-f'.*" "['msmtp', '--host', gethostname(), '-f', \$meta['from']];"
 }}
@@ -112,7 +117,7 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
 
 # The rspamc command needs to reference the web socket explicitly
 
-~ edit /opt/admin/src/AppBundle/Server/System.php; {{
+~ edit /opt/admin/src/AppBundle/Server/System[.]php /opt/admin/src/Base/Server/System[.]php; {{
   - sub "rspamc stat" \
         "rspamc -h $rspam_web stat"
 }}
@@ -182,7 +187,7 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
   - sub "redis-cli" "redis-cli -s '$redis'"
 }}
 
-~ edit /opt/admin/src/AppBundle/Resources/config/services.yml; {{
+~ edit /opt/admin/src/AppBundle/Resources/config/services[.]yml /opt/admin/config/services_base[.]yaml; {{
   - sub '^  Predis\\Client: .*$' \
          '  Predis\\Client: { arguments: [ "unix:'"$redis"'" ] }'
 
@@ -193,8 +198,10 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
 # === Support Roundcube plugins and persistent encryption key
 
 # Load 48-digit hex des_key from DES_KEY
-~ edit /etc/cont-init.d/20-apply-server-config; {{
-  - sub '[$]key = bin2hex' '$key = getenv("DES_KEY") ?: bin2hex'
+~ edit /etc/cont-init.d/{20-apply-server-config,97[-]randoms}; {{
+  + range 'roundcube' 'preg_replace'; {{
+    - sub '[$]key = bin2hex' '$key = getenv("DES_KEY") ?: bin2hex'
+  }}
 }}
 
 # Autoload roundcube plugins from /data/roundcube/installed-plugins
