@@ -37,6 +37,10 @@ bindhost=$(hostname)
 sub 'submission_host = .*:587$' "submission_host = $bindhost:587" /etc/dovecot/conf.d/15-lda.conf
 sub '^host.*' "host $bindhost" /etc/msmtprc
 
+# Admin emails should go to the bindhost as well
+sub "%env(MAILER_DSN)%" "smtp://$bindhost:25?verify_peer=0"        /opt/admin/config/packages/mailer.yaml
+sub "MAILER_DSN=.*" "MAILER_DSN=smtp://$bindhost:25?verify_peer=0" /opt/admin/.env
+
 if [[ "$LISTEN_ON" == host ]]; then
 	# No IPs given, just use the hostname
 	sub '__HOST__'        "$bindhost"                 /etc/nginx/sites-enabled/administration
