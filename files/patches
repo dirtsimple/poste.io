@@ -167,7 +167,7 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
 
 ~ edit /etc/redis/redis.conf; {{
   - sub "^port 6379" "port 0"  # disable the localhost port
-  - append "" "unixsocket $redis" "unixsocketperm 777"
+  - append "" "unixsocket $redis" "unixsocketperm 777"  # can be removed as of 2.3.7
 }}
 
 ~ edit /etc/rspamd/local.d/{redis,statistic}.conf; {{
@@ -179,7 +179,7 @@ haraka_sub_web=$sockdir/haraka/web-11381.sock
   - sub '-h "127.0.0.1"' "-s '$redis'";
 }}
 
-~ edit /bin/clear-idle-connections; {{
+~ edit /bin/clear[-]idle-connections; {{  # can be removed as of 2.3.7
   - sub "redis-cli'" "redis-cli', '-s', '$redis'"
 }}
 
