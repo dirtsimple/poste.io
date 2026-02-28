@@ -1,6 +1,6 @@
 ---
-name: Report an issue with this project
-about: Only use if you are using dirtsimple/poste.io, NOT analogic/poste.io
+name: 'Report an issue with *this fork*'
+about: 'Only use if you are using dirtsimple/poste.io, NOT analogic/poste.io!'
 title: ''
 labels: ''
 assignees: ''
